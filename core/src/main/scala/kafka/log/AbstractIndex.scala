@@ -108,30 +108,41 @@ abstract class AbstractIndex(@volatile private var _file: File, val baseOffset: 
 
   @volatile
   protected var mmap: MappedByteBuffer = {
+
+    // 1. 创建索引文件
     val newlyCreated = file.createNewFile()
+    // 2. 以writable指定的方式（读写方式或只读方式）打开索引文件
     val raf = if (writable) new RandomAccessFile(file, "rw") else new RandomAccessFile(file, "r")
     try {
       /* pre-allocate the file if necessary */
       if(newlyCreated) {
         if(maxIndexSize < entrySize)
           throw new IllegalArgumentException("Invalid max index size: " + maxIndexSize)
+
+        // 3. 设置索引文件长度，roundDownToExactMultiple计算的是不超过maxInde
         raf.setLength(roundDownToExactMultiple(maxIndexSize, entrySize))
       }
 
+      // 4. 更新索引长度字段_length
       /* memory-map the file */
       _length = raf.length()
+      // 5. 创建MappedByteBuffer对象
       val idx = {
         if (writable)
           raf.getChannel.map(FileChannel.MapMode.READ_WRITE, 0, _length)
         else
           raf.getChannel.map(FileChannel.MapMode.READ_ONLY, 0, _length)
       }
+
+      // 6. 如果是新创建的索引文件，将MappedByteBuffer对象的当前位置置成0
+      // 如果索引文件已存在，将MappedByteBuffer对象的当前位置设置成最后一个索引项所在位置
       /* set the position in the index for the next entry */
       if(newlyCreated)
         idx.position(0)
       else
         // if this is a pre-existing index, assume it is valid and set position to last entry
         idx.position(roundDownToExactMultiple(idx.limit(), entrySize))
+      // 7. 返回创建的MappedByteBuffer对象
       idx
     } finally {
       CoreUtils.swallow(raf.close(), AbstractIndex)
